@@ -1,0 +1,140 @@
+---
+title: Building a Machine Learning Algorithm to Predict Exercise Activities Using
+  Wearable Fitness Trackers
+author: "James Kennedy"
+output:
+  pdf_document:
+    toc: yes
+  html_document:
+    toc: yes
+---
+##Summary
+
+------
+
+The recent popularity of wearable fitness trackers, such as Jawbone and Fitbit, have provided a wealth of activity data, including the movements and acceleration of users during typical fitness activities. This document uses the dataset provided by [groupware.les](http://groupware.les.inf.puc-rio.br/har) and creates a model to predict the type of activity that is being performed using accelerometer measurements on the belt, forearm, arm, and dumbbell of 6 participants. 
+
+Basic preprocessing and a random forest technique are used to build the predictive model. The accuracy, estimated with cross validation on the training data set, is 99.12%. 
+
+
+##Load Data
+
+------
+
+The first step in this analysis is to load the data and the relevant R libraries.  The activities, listed in the 'classe' variable, are either A, B, C, D, or E.
+
+```{r load_data}
+setwd('~/Data/')
+training.data.file <- 'training_data.csv'
+if (!file.exists(training.data.file)){
+        url <- 'https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv'
+        download.file(url,destfile = training.data.file,method='curl')
+}
+original.training.data <- read.csv(training.data.file)
+original.training.data$classe <- as.factor(original.training.data$classe)
+```
+
+```{r load_test_data, echo=FALSE}
+testing.data.file <- 'testing_data.csv'
+if (!file.exists(testing.data.file)){
+        url <- 'https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv'
+        download.file(url,destfile = testing.data.file,method='curl')
+}
+testing.data <- read.csv(testing.data.file)
+```
+
+```{r libraries, eval=FALSE}
+library(caret)
+library(rpart)
+library(randomForest)
+library(rattle)
+```
+```{r libraries2, echo=FALSE}
+library(caret)
+library(rpart)
+library(randomForest)
+library(rattle)
+```
+
+##Preprocessing
+
+------
+
+For cross validation purposes, the training data is split into a training set and a testing set, the former uses 60% of the original training data the latter uses 40% of the original training data.
+```{r slice}
+set.seed(32323)
+inTrain <- createDataPartition(y=original.training.data$classe,p=0.6,list=FALSE)
+training <- original.training.data[inTrain,]
+testing <- original.training.data[-inTrain,]
+```
+
+It is assumed that some variables in the dataset will have zero predictive power on the activity.  These variables are the user name, the activity timestamp, the window number, and the data row (X), and are removed from the training and testing data.
+```{r preprocess1}
+training$user_name <- NULL
+training$raw_timestamp_part_1 <- NULL
+training$raw_timestamp_part_2 <- NULL
+training$cvtd_timestamp <- NULL
+training$num_window <- NULL
+training$X <- NULL
+
+testing$user_name <- NULL
+testing$raw_timestamp_part_1 <- NULL
+testing$raw_timestamp_part_2 <- NULL
+testing$cvtd_timestamp <- NULL
+testing$num_window <- NULL
+testing$X <- NULL
+```
+
+Then, variables which contain more than 50% NA values are selected and removed from the training data. The same cuts are then applied to the testing data.
+```{r preprocess2}
+na.cut.threshold <- colSums(is.na(training)) < nrow(training)*0.5
+training <- subset(training, select=na.cut.threshold)
+testing <- subset(testing, select=na.cut.threshold)
+```
+
+Finally, variables with near zero variance are selected and removed from the training data.  Again, the same cuts are applied to the testing data.
+```{r preprocess3}
+nzv <- nearZeroVar(training,saveMetrics = FALSE)
+training <- training[,-nzv]
+testing <- testing[,-nzv]
+```
+
+##Tree Based Model
+
+-----
+
+A tree based machine learning algorithm is used to generate the predictive model. An example of a decision tree is shown in figure 1.
+
+```{r rpart,echo=FALSE}
+modelfitRpart <- train(classe~.,method='rpart',data=training)
+fancyRpartPlot(modelfitRpart$finalModel,main='',sub='')
+```
+
+**Figure 1.** An example tree used to predict the activity based on accelerometer measurements.
+
+To improve out-out sample accuracy and prevent over-fitting of the training data, a random forest approach is used, which makes and averages multiple trees. The following code generates the random forest model.
+```{r randomForest}
+modelfit <- train(classe~.,method='rf',data=training,trControl=trainControl(method='cv',number=3))
+```
+
+##Model Assessment
+
+------
+
+The testing sample is used to cross validate the model. A prediction from the test data is compared to the true values using a confusion matrix.
+```{r assess}
+pred <- predict(modelfit,testing)
+cM <- confusionMatrix(pred,testing$classe)
+```
+
+```{r assess_true,echo=FALSE}
+confusionMatrix(pred,testing$classe)
+```
+
+The confusion matrix shows that the model has a high accuracy, sensitivity, and specificity for each activity. The overall accuracy of the model is 99.12% with a 95% confidence interval of (98.89%, 99.32%). Therefore, the out-of-sample error is 0.88%.
+
+##Conclusions
+
+------
+
+Basic preprocessing and a random forest algorithm have been used to generate a predictive model for exercise activities using accelerometer data on user's bodies and exercise equipment. Cross validation shows that the resulting predictive model has a high accuracy and low error rate.
